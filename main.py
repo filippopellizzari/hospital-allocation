@@ -2,8 +2,29 @@ import pandas as pd
 from pulp import LpMinimize, LpProblem, LpStatus, LpVariable, lpSum
 
 N_DOCTORS = 10
-DAYS = [1, 2, 3, 4, 5]
-HOLIDAYS = [6, 7]
+DAYS = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    8,
+    9,
+    10,
+    11,
+    12,
+    15,
+    16,
+    17,
+    18,
+    19,
+    22,
+    23,
+    24,
+    25,
+    26,
+]
+HOLIDAYS = [6, 7, 13, 14, 20, 21, 27, 28]
 
 
 def main() -> None:
@@ -13,15 +34,15 @@ def main() -> None:
     # -------- DECISION VARIABLES ---------------
 
     # doctors
-    doctors = [f"d{str(i).zfill(2)}" for i in range(N_DOCTORS + 1)]
+    doctors = [f"d{str(i).zfill(2)}" for i in range(N_DOCTORS)]
     # tasks
-    ward = [f"t{i}Ward" for i in DAYS]
-    nursery = [f"t{i}Nursery" for i in DAYS]
-    surgery_morning = [f"t{i}SurgeryMorning" for i in DAYS]
-    surgery_afternoon = [f"t{i}SurgeryAfternoon" for i in DAYS]
-    night = [f"t{i}Night" for i in DAYS]
-    night_holiday = [f"t{i}NightHoliday" for i in HOLIDAYS]
-    surgery_holiday = [f"t{i}SurgeryHoliday" for i in HOLIDAYS]
+    ward = [f"t{str(i).zfill(2)}Ward" for i in DAYS]
+    nursery = [f"t{str(i).zfill(2)}Nursery" for i in DAYS]
+    surgery_morning = [f"t{str(i).zfill(2)}SurgeryMorning" for i in DAYS]
+    surgery_afternoon = [f"t{str(i).zfill(2)}SurgeryAfternoon" for i in DAYS]
+    night = [f"t{str(i).zfill(2)}Night" for i in DAYS]
+    night_holiday = [f"t{str(i).zfill(2)}Night" for i in HOLIDAYS]
+    surgery_holiday = [f"t{str(i).zfill(2)}Surgery" for i in HOLIDAYS]
 
     tasks = (
         ward
@@ -42,17 +63,13 @@ def main() -> None:
     # -------- OBJECTIVE FUNCTION ---------------
 
     # cost (time) of each task
-    cost_4 = dict.fromkeys([(r, t) for r in doctors for t in surgery_morning], 4)
-    cost_8 = dict.fromkeys(
-        [(r, t) for r in doctors for t in ward + nursery + surgery_afternoon], 8
-    )
-    cost_12 = dict.fromkeys(
-        [(r, t) for r in doctors for t in night + night_holiday + surgery_holiday], 12
-    )
+    cost_4 = dict.fromkeys([t for t in surgery_morning], 4)
+    cost_8 = dict.fromkeys([t for t in ward + nursery + surgery_afternoon], 8)
+    cost_12 = dict.fromkeys([t for t in night + night_holiday + surgery_holiday], 12)
     cost = {**cost_4, **cost_8, **cost_12}
 
     # minimize total cost (time)
-    prob += lpSum(x[i, j] * cost[i, j] for i in doctors for j in tasks)
+    prob += lpSum(x[i, j] * cost[j] for i in doctors for j in tasks)
 
     # -------- CONSTRAINTS ---------------
 
@@ -60,19 +77,34 @@ def main() -> None:
     for j in tasks:
         prob += lpSum(x[i, j] for i in doctors) == 1
 
-    # Each doctor must not exceed the maximum number of hours per week
-
-    # doctors 1->5: 100% (40 h)
-    time_100 = dict.fromkeys([f"d{str(i).zfill(2)}" for i in range(0, 5 + 1)], 40)
-    # doctors 6->8: 75% (30 h)
-    time_75 = dict.fromkeys([f"d{str(i).zfill(2)}" for i in range(6, 8 + 1)], 30)
-    # doctors 9->10: 50% (20 h)
-    time_50 = dict.fromkeys([f"d{str(i).zfill(2)}" for i in range(9, 10 + 1)], 20)
+    # doctors 100% (40 h)
+    time_100 = dict.fromkeys([f"d{str(i).zfill(2)}" for i in range(0, 5 + 1)], 160)
+    # doctors  75% (30 h)
+    time_75 = dict.fromkeys([f"d{str(i).zfill(2)}" for i in range(6, 8 + 1)], 120)
+    # doctors 50% (20 h)
+    time_50 = dict.fromkeys([f"d{str(i).zfill(2)}" for i in range(9, 10 + 1)], 80)
 
     resource_capacity = {**time_100, **time_75, **time_50}
 
     for i in doctors:
-        prob += lpSum(x[i, j] for j in tasks) <= resource_capacity[i]
+        # Each doctor must not exceed the maximum number of hours per week
+        prob += lpSum(x[i, j] * cost[j] for j in tasks) <= resource_capacity[i]
+        # Each doctor cannot do multiple tasks in the same day
+        for day in range(1, 28 + 1):
+            tasks_day = [t for t in tasks if t.startswith(f"t{str(day).zfill(2)}")]
+            prob += lpSum(x[i, j] for j in tasks_day) <= 1
+        # night shift ("smonto notte")
+        for day in range(2, 28 + 1):  # starting from day 2
+            tasks_day_light = [
+                t
+                for t in tasks
+                if t.startswith(f"t{str(day).zfill(2)}")
+                and t != f"t{str(day).zfill(2)}Night"
+            ]
+            night_actual = [f"t{str(day).zfill(2)}Night"]
+            night_before = [f"t{str(day-1).zfill(2)}Night"]
+            prob += lpSum(x[i, j] for j in tasks_day_light + night_before) <= 1
+            prob += lpSum(x[i, j] for j in night_actual + night_before) <= 1
 
     # -------- SOLUTION ---------------
 
@@ -80,15 +112,20 @@ def main() -> None:
     prob.solve()
 
     # Print the results
-    print("Status:", LpStatus[prob.status])
-    df = pd.DataFrame()
+    status = LpStatus[prob.status]
+    print(f"{status=}")
+    if status == "Infeasible":
+        print("No solution")
+        return
+    res = {}
     for v in prob.variables():
         doctor, task = v.name.replace("(", "").replace(")", "").split("_")[1:]
-        df.loc[doctor, task] = v.varValue
-        # print(doctor, task, v.varValue)
-        # print(v.name, "=", v.varValue)
-    df = df.astype("Int8")
-    df.to_csv("solution.csv", sep=";", index=True)
+        res[(doctor, task)] = v.varValue
+    df = pd.DataFrame(list(res.keys()), columns=["Doctor", "Task"])
+    df["Value"] = list(res.values())
+    df_pivot = df.pivot(index="Doctor", columns="Task", values="Value")
+    df_pivot = df_pivot.astype("Int8")
+    df_pivot.to_csv(f"solution.csv", sep=";", index=True)
 
 
 if __name__ == "__main__":
