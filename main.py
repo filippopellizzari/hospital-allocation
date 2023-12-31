@@ -1,4 +1,6 @@
+import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 from pulp import LpMinimize, LpProblem, LpStatus, LpVariable, lpSum
 
 N_DOCTORS = 10
@@ -23,6 +25,9 @@ DAYS = [
     24,
     25,
     26,
+    29,
+    30,
+    31,
 ]
 HOLIDAYS = [6, 7, 13, 14, 20, 21, 27, 28]
 
@@ -90,11 +95,12 @@ def main() -> None:
         # Each doctor must not exceed the maximum number of hours per week
         prob += lpSum(x[i, j] * cost[j] for j in tasks) <= resource_capacity[i]
         # Each doctor cannot do multiple tasks in the same day
-        for day in range(1, 28 + 1):
+        max_day = max(DAYS + HOLIDAYS)
+        for day in range(1, max_day + 1):
             tasks_day = [t for t in tasks if t.startswith(f"t{str(day).zfill(2)}")]
             prob += lpSum(x[i, j] for j in tasks_day) <= 1
         # night shift ("smonto notte")
-        for day in range(2, 28 + 1):  # starting from day 2
+        for day in range(2, max_day + 1):  # starting from day 2
             tasks_day_light = [
                 t
                 for t in tasks
@@ -123,9 +129,18 @@ def main() -> None:
         res[(doctor, task)] = v.varValue
     df = pd.DataFrame(list(res.keys()), columns=["Doctor", "Task"])
     df["Value"] = list(res.values())
-    df_pivot = df.pivot(index="Doctor", columns="Task", values="Value")
-    df_pivot = df_pivot.astype("Int8")
-    df_pivot.to_csv(f"solution.csv", sep=";", index=True)
+    df["Day"] = df["Task"].str[:4]
+    df["Task"] = df["Task"].str[4:]
+    df = df[df["Value"] == 1]
+    df_pivot_1 = df.pivot(index="Day", columns="Task", values="Doctor")
+    df_pivot_1.to_csv(f"solution_tasks.csv", sep=";", index=True)
+    df_pivot_2 = df.pivot(index="Day", columns="Doctor", values="Task")
+    df_pivot_2.to_csv(f"solution_doctors.csv", sep=";", index=True)
+
+    stats = df.groupby(["Doctor", "Task"])["Value"].sum().reset_index()
+    plt.figure(figsize=(10, 4))
+    sns.barplot(data=stats, x="Doctor", y="Value", hue="Task")
+    plt.savefig("stats.png")
 
 
 if __name__ == "__main__":
