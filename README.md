@@ -4,7 +4,7 @@ Optimization tool for resource allocation of medical specialists in a hospital (
 
 ## Problem
 
-Assign the shifts for each doctor respecting the constraints:
+Assign the shifts for each doctor respecting the following constraints:
 - Shifts must be covered by one and only one doctor.
 - Doctors must not exceed the maximum number of hours per week, based on their contract (full time or part-time).
 - Doctors can not do multiple shifts in the same day.
