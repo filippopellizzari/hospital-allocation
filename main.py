@@ -4,7 +4,7 @@ import seaborn as sns
 from pulp import LpMinimize, LpProblem, LpStatus, LpVariable, lpSum
 
 N_DOCTORS = 10
-DAYS = [
+WORK_DAYS = [
     1,
     2,
     3,
@@ -41,11 +41,11 @@ def main() -> None:
     # doctors
     doctors = [f"d{str(i).zfill(2)}" for i in range(N_DOCTORS)]
     # tasks
-    ward = [f"t{str(i).zfill(2)}Ward" for i in DAYS]
-    nursery = [f"t{str(i).zfill(2)}Nursery" for i in DAYS]
-    surgery_morning = [f"t{str(i).zfill(2)}SurgeryMorning" for i in DAYS]
-    surgery_afternoon = [f"t{str(i).zfill(2)}SurgeryAfternoon" for i in DAYS]
-    night = [f"t{str(i).zfill(2)}Night" for i in DAYS]
+    ward = [f"t{str(i).zfill(2)}Ward" for i in WORK_DAYS]
+    nursery = [f"t{str(i).zfill(2)}Nursery" for i in WORK_DAYS]
+    surgery_morning = [f"t{str(i).zfill(2)}SurgeryMorning" for i in WORK_DAYS]
+    surgery_afternoon = [f"t{str(i).zfill(2)}SurgeryAfternoon" for i in WORK_DAYS]
+    night = [f"t{str(i).zfill(2)}Night" for i in WORK_DAYS]
     night_holiday = [f"t{str(i).zfill(2)}Night" for i in HOLIDAYS]
     surgery_holiday = [f"t{str(i).zfill(2)}Surgery" for i in HOLIDAYS]
 
@@ -78,7 +78,7 @@ def main() -> None:
 
     # -------- CONSTRAINTS ---------------
 
-    # Each task must be covered by 1 doctor
+    # Shifts must be covered by one and only one doctor
     for j in tasks:
         prob += lpSum(x[i, j] for i in doctors) == 1
 
@@ -92,14 +92,14 @@ def main() -> None:
     resource_capacity = {**time_100, **time_75, **time_50}
 
     for i in doctors:
-        # Each doctor must not exceed the maximum number of hours per week
+        # Doctors must not exceed the maximum number of hours per week
         prob += lpSum(x[i, j] * cost[j] for j in tasks) <= resource_capacity[i]
-        # Each doctor cannot do multiple tasks in the same day
-        max_day = max(DAYS + HOLIDAYS)
+        # Doctors can not do multiple shifts in the same day
+        max_day = max(WORK_DAYS + HOLIDAYS)
         for day in range(1, max_day + 1):
             tasks_day = [t for t in tasks if t.startswith(f"t{str(day).zfill(2)}")]
             prob += lpSum(x[i, j] for j in tasks_day) <= 1
-        # night shift ("smonto notte")
+        # Night shifts rules
         for day in range(2, max_day + 1):  # starting from day 2
             tasks_day_light = [
                 t
@@ -132,11 +132,14 @@ def main() -> None:
     df["Day"] = df["Task"].str[:4]
     df["Task"] = df["Task"].str[4:]
     df = df[df["Value"] == 1]
+    # task view: which are the doctors assigned to each task every day
     df_pivot_1 = df.pivot(index="Day", columns="Task", values="Doctor")
     df_pivot_1.to_csv(f"solution_tasks.csv", sep=";", index=True)
+    # doctors view: which are the tasks assigned to each doctors every day
     df_pivot_2 = df.pivot(index="Day", columns="Doctor", values="Task")
     df_pivot_2.to_csv(f"solution_doctors.csv", sep=";", index=True)
 
+    # Visualize the distribution of shifts for each doctor
     stats = df.groupby(["Doctor", "Task"])["Value"].sum().reset_index()
     plt.figure(figsize=(10, 4))
     sns.barplot(data=stats, x="Doctor", y="Value", hue="Task")
